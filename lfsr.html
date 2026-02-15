@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>C64 SID Noise</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', monospace; }
+        canvas { 
+            display: block;
+            image-rendering: pixelated; 
+            image-rendering: crisp-edges;
+            width: 100vw; height: 100vh;
+            z-index: -1;
+        }
+        .ui { 
+            position: absolute; top: 50%; left: 50%; 
+            transform: translate(-50%, -50%);
+            background: #6c5eb5; padding: 20px; 
+            border: 4px solid #352879; color: #fff;
+            box-shadow: 8px 8px 0 #000; text-align: center;
+        }
+        button { background: #352879; color: #fff; border: 2px solid #fff; padding: 10px; cursor: pointer; width: 100%; }
+        input { width: 100%; margin: 15px 0; }
+    </style>
+</head>
+<body>
+
+<canvas id="c64canvas" width="160" height="200"></canvas>
+
+<div class="ui">
+    <div style="font-size: 0.8rem; margin-bottom: 10px;">READY.</div>
+    <button id="btn">LOAD "NOISE",8,1</button>
+    <input type="range" id="freq" min="0" max="255" value="128">
+    <div id="valDisplay">SID FREQ: 128</div>
+</div>
+
+<script>
+    const canvas = document.getElementById('c64canvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const btn = document.getElementById('btn');
+    const freqSlider = document.getElementById('freq');
+    const valDisplay = document.getElementById('valDisplay');
+
+    const c64cols = ["#000","#fff","#832","#7bc","#949","#5a4","#328","#ba5","#852","#540","#b66","#555","#777","#9e8","#76c","#999"];
+    
+    let lfsr = 0x7FFFFF;
+    let audioCtx, accum = 0, currentSample = 0, lastByte = 0;
+
+    function nextSid() {
+        let b17 = (lfsr >> 17) & 1, b22 = (lfsr >> 22) & 1;
+        lfsr = ((lfsr << 1) | (b17 ^ b22)) & 0x7FFFFF;
+
+        let out = 0;
+        [20,18,14,11,9,5,2,0].forEach((b, i) => { if(lfsr & (1 << b)) out |= (1 << (7-i)); });
+        
+        lastByte = out;
+
+        // "fat pixel" in 160x200
+        ctx.fillStyle = c64cols[out % 16];
+        ctx.fillRect(Math.floor(Math.random()*160), Math.floor(Math.random()*200), 1, 1);
+        
+        return (out / 127.5) - 1.0;
+    }
+
+    btn.onclick = () => {
+        if (!audioCtx) {
+            audioCtx = new AudioContext();
+            const node = audioCtx.createScriptProcessor(2048, 1, 1);
+            node.onaudioprocess = (e) => {
+                let out = e.outputBuffer.getChannelData(0);
+                let speed = Math.pow(freqSlider.value / 255, 3) * 0.5;
+                for (let i = 0; i < out.length; i++) {
+                    accum += speed;
+                    if (accum >= 1.0) { currentSample = nextSid(); accum -= 1.0; }
+                    out[i] = currentSample;
+                }
+            };
+            node.connect(audioCtx.destination);
+            btn.innerText = "RUNNING...";
+            setInterval(() => valDisplay.innerText = "SID FREQ: " + freqSlider.value, 100);
+        } else {
+            audioCtx.state === 'running' ? audioCtx.suspend() : audioCtx.resume();
+        }
+    };
+</script>
+</body>
+</html>
